@@ -1,0 +1,31 @@
+<div style="font-family: Arial, sans-serif; padding: 20px;">
+  <h2>🎤 Live Voice Transcription</h2>
+
+  <!-- Socket connection status -->
+  <p>
+    Status:
+    <span [style.color]="connected ? 'green' : 'red'">
+      {{ connected ? 'Socket Connected ✅' : 'Socket Disconnected ❌' }}
+    </span>
+  </p>
+
+  <!-- Recording controls -->
+  <button (click)="startRecording()" [disabled]="!connected || recording">
+    🎙️ Start Recording
+  </button>
+  <button (click)="stopRecording()" [disabled]="!recording">
+    ⏹️ Stop Recording
+  </button>
+
+  <!-- Recording status -->
+  <p *ngIf="recording" style="color: blue;">Recording... 🎧</p>
+  <p *ngIf="audioChunksSent === 0 && recording" style="color: orange;">
+    ⚠️ Audio not yet sent
+  </p>
+
+  <!-- Live transcription -->
+  <h3>Transcription:</h3>
+  <p style="border: 1px solid #ccc; padding: 10px; min-height: 50px;">
+    {{ transcription }}
+  </p>
+</div>
