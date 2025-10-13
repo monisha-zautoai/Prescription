@@ -1,31 +1,233 @@
-<div style="font-family: Arial, sans-serif; padding: 20px;">
-  <h2>🎤 Live Voice Transcription</h2>
+<div class="container">
 
-  <!-- Socket connection status -->
-  <p>
-    Status:
-    <span [style.color]="connected ? 'green' : 'red'">
-      {{ connected ? 'Socket Connected ✅' : 'Socket Disconnected ❌' }}
-    </span>
-  </p>
+  <!-- Header -->
+  <header class="app-header">
+    <h1 class="header-title">💊 Medication Transcription & Analysis</h1>
+    <div class="top-controls">
+      <button class="btn speak" (click)="openPatientInfoDialog()">🎤 Speak</button>
+    </div>
+  </header>
 
-  <!-- Recording controls -->
-  <button (click)="startRecording()" [disabled]="!connected || recording">
-    🎙️ Start Recording
-  </button>
-  <button (click)="stopRecording()" [disabled]="!recording">
-    ⏹️ Stop Recording
-  </button>
+  <!-- Medication Table -->
+  <section class="medicine-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Medicine</th>
+          <th>Dose (M-A-N)</th>
+          <th>When</th>
+          <th>Frequency</th>
+          <th>Duration</th>
+          <th>Notes</th>
+          <th>Suggestions</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngIf="processedResult?.length === 0">
+          <td colspan="8" class="no-data">-- No data yet --</td>
+        </tr>
 
-  <!-- Recording status -->
-  <p *ngIf="recording" style="color: blue;">Recording... 🎧</p>
-  <p *ngIf="audioChunksSent === 0 && recording" style="color: orange;">
-    ⚠️ Audio not yet sent
-  </p>
+        <tr *ngFor="let med of processedResult" [ngClass]="{'warning-row': isMedicineUnsuitable(med)}">
+          <td><input [(ngModel)]="med.selected.name" /></td>
 
-  <!-- Live transcription -->
-  <h3>Transcription:</h3>
-  <p style="border: 1px solid #ccc; padding: 10px; min-height: 50px;">
-    {{ transcription }}
-  </p>
+          <td class="dose-container horizontal-dose">
+            <input type="number" min="0" [(ngModel)]="med.dose1" class="dose-box" placeholder="0" />
+            <span>-</span>
+            <input type="number" min="0" [(ngModel)]="med.dose2" class="dose-box" placeholder="0" />
+            <span>-</span>
+            <input type="number" min="0" [(ngModel)]="med.dose3" class="dose-box" placeholder="0" />
+          </td>
+
+          <td><input [(ngModel)]="med.when" /></td>
+          <td><input [(ngModel)]="med.frequency" /></td>
+          <td><input [(ngModel)]="med.duration" /></td>
+          <td><input [(ngModel)]="med.notes" /></td>
+
+          <td>
+            <span *ngIf="med.suggestions?.length" class="eye-icon" (click)="openSuggestionDialog(med)">👁️</span>
+          </td>
+
+          <td>
+            <button *ngIf="hasSafeAlternative(med)" class="btn use-btn" (click)="fetchAndShowUseDialog(med)">
+              ⚠️ Use
+            </button>
+
+            <button *ngIf="med.previousSelected" class="btn revert-btn" (click)="revertMedicine(med)">Revert</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 🧾 Patient Info Dialog -->
+<div *ngIf="showPatientInfoDialog" class="dialog-overlay">
+  <div class="dialog-box patient-info-dialog">
+    <div class="dialog-header">
+      <h3>🧾 Patient Information</h3>
+      <button class="close-btn" (click)="closePatientInfoDialog()">✖</button>
+    </div>
+
+    <div class="dialog-body">
+      <!-- Voice Input Toggle -->
+      <div class="voice-toggle">
+        <label>
+          <input type="checkbox" [(ngModel)]="voiceInputEnabled" />
+          <span>Enable Voice Input 🎤</span>
+        </label>
+      </div>
+
+      <div class="form-grid">
+        <!-- Age -->
+        <div class="form-field">
+          <label>Age</label>
+          <div class="input-group">
+            <input type="number" [(ngModel)]="patientInfo.age" placeholder="Enter age" />
+            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('age')">🎤</button>
+          </div>
+        </div>
+
+        <!-- Gender -->
+        <div class="form-field">
+          <label>Gender</label>
+          <select [(ngModel)]="patientInfo.gender">
+            <option value="" disabled selected>Select Gender</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <!-- Chief Complaint -->
+        <div class="form-field full-width">
+          <label>Chief Complaint</label>
+          <div class="input-group">
+            <input [(ngModel)]="patientInfo.chiefComplaint" placeholder="e.g. Fever, Headache..." />
+            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('chiefComplaint')">🎤</button>
+          </div>
+        </div>
+
+        <!-- Drug Allergies -->
+        <div class="form-field full-width">
+          <label>Drug Allergies</label>
+          <div class="input-group">
+            <input [(ngModel)]="patientInfo.drugAllergies" placeholder="e.g. Penicillin, Sulfa drugs..." />
+            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('drugAllergies')">🎤</button>
+          </div>
+        </div>
+
+        <!-- History / Previous Illness -->
+        <div class="form-field full-width">
+          <label>History of Previous Illness</label>
+          <div class="input-group">
+            <input [(ngModel)]="patientInfo.previousConsultant" placeholder="Optional" />
+            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('previousConsultant')">🎤</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      <button class="btn next-btn" (click)="goToSTTDialog()">Next ➡️</button>
+    </div>
+  </div>
+</div>
+
+  <!-- STT Dialog -->
+  <div *ngIf="showSTTDialog" class="dialog-overlay">
+    <div class="dialog-box compact-dialog stt-dialog">
+      <div class="dialog-header">
+        <h3>🎙️ Speak Now</h3>
+        <button class="close-btn" (click)="closeSTTDialog()">❌</button>
+      </div>
+      <p class="stt-subtitle">Start speaking. Use Pause/Resume if needed.</p>
+      <div class="dialog-buttons">
+        <button class="btn pause-btn" (click)="togglePauseResume()">{{ recordingPaused ? 'Resume' : 'Pause' }}</button>
+        <button class="btn send-btn" (click)="sendTranscription()">Send ✅</button>
+        <button class="btn cancel-btn" (click)="closeSTTDialog()">Cancel ❌</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clinical Warning / Alternative Modal -->
+  <div *ngIf="showClinicalWarningDialog && selectedAlternativeForRow" class="dialog-overlay">
+    <div class="dialog-box compact-dialog">
+      <div class="dialog-header">
+        <h3>⚠️ Clinical Warning</h3>
+        <button class="close-btn" (click)="closeClinicalWarningDialog()">❌</button>
+      </div>
+
+      <div class="warning-text">{{ selectedAlternativeForRow.selected.clinical_warning?.message }}</div>
+
+      <ng-container *ngIf="selectedAlternativeForRow.selected.clinical_warning as cw">
+        <div class="alt-container" *ngIf="cw.alternative_suggestion as alt">
+          <h4>💊 Suggested Alternative:</h4>
+          <table class="suggestion-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Composition</th>
+                <th>Price</th>
+                <th>Confidence</th>
+                <th>Reason</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>{{ alt.name }}</td>
+                <td>{{ alt.composition || '-' }}</td>
+                <td>{{ alt.price || '-' }}</td>
+                <td>{{ alt.confidence || 0 | number:'1.2-2' }}</td>
+                <td>{{ alt.reason || '-' }}</td>
+                <td>
+                  <button class="btn select-btn"
+                    (click)="swapSuggestion(selectedAlternativeForRow!, alt); closeClinicalWarningDialog()">Select</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div *ngIf="!cw.alternative_suggestion">
+          <p>No safe alternatives found for this medicine.</p>
+        </div>
+      </ng-container>
+    </div>
+  </div>
+
+  <!-- Suggestions Dialog -->
+  <div *ngIf="showSuggestionDialog && currentMedForSuggestion" class="dialog-overlay">
+    <div class="dialog-box compact-dialog">
+      <div class="dialog-header">
+        <h3>💡 Suggestions for {{ currentMedForSuggestion.selected.name }}</h3>
+        <button class="close-btn" (click)="closeSuggestionDialog()">❌</button>
+      </div>
+
+      <table class="suggestion-table">
+        <thead>
+          <tr>
+            <th>Medicine</th>
+            <th>Composition</th>
+            <th>Price (₹)</th>
+            <th>Confidence</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let s of currentMedForSuggestion.filteredSuggestions"
+            [ngClass]="{'warning-row': s.clinical_warning}">
+            <td>{{ s.name }}</td>
+            <td>{{ s.composition || '-' }}</td>
+            <td>{{ s.price || '-' }}</td>
+            <td>{{ s.confidence || 0 | number:'1.2-2' }}</td>
+            <td>
+              <button class="btn select-btn"
+                (click)="swapSuggestion(currentMedForSuggestion, s); closeSuggestionDialog()">Select</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
