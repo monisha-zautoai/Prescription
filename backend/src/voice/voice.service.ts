@@ -1,172 +1,83 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';  
 import { ConfigService } from '@nestjs/config';
 import { Canopus } from '@zauto/canopus';
-
-interface SessionData {
-  canopus: any; // Canopus instance
-  isActive: boolean;
-  startTime: number;
-  modelId: string;
-  clientId: string,
-  // Audio accounting for credit calculation
-  audioBytesAccumulated?: number; // total raw audio bytes received
-  sampleRateHint?: number; // last seen sample_rate
-  bytesPerSample?: number; // default 2 (16-bit PCM)
-  channels?: number; // default 1
-  // Finalization flags
-  accounted?: boolean; // whether credits/time have been finalized
-  endedAt?: number; // when we marked the session ended
-}
+import * as fs from 'fs';
+import * as path from 'path';
+import * as child_process from 'child_process';
 
 @Injectable()
 export class VoiceService {
-  private sessions = new Map<string, SessionData>();
-  private apiKey: string;
-  private link: string;
-  private modelId: string;
+  private readonly logger = new Logger(VoiceService.name);
+  private readonly canopus: Canopus;
+  private readonly modelId: string;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('CANOPUS_API_KEY');
-    const link = this.configService.get<string>('CANOPUS_API_URL');
-    const modelId = this.configService.get<string>('MODEL_ID');
-
     if (!apiKey) throw new Error('CANOPUS_API_KEY is missing in .env');
-    if (!link) throw new Error('CANOPUS_API_URL is missing in .env');
+
+    const apiLink = this.configService.get<string>('CANOPUS_API_URL');
+    if (!apiLink) throw new Error('CANOPUS_API_URL is missing in .env');
+
+    const modelId = this.configService.get<string>('MODEL_ID');
     if (!modelId) throw new Error('MODEL_ID is missing in .env');
 
-    this.apiKey = apiKey;
-    this.link = link;
     this.modelId = modelId;
-    disableFS: true
+
+    this.canopus = new Canopus({
+      apiKey,
+      link: apiLink,
+    });
   }
 
-  initCanopusSession(clientId: string, emit: (event: string, data: any) => void, callbacks: any) {
-    const session = this.createSession(clientId, emit);
-    this.sessions.set(clientId, session);
-    this.startSession(session, emit, callbacks);
+  // Check if file is already WAV
+  async isWavFile(filePath: string): Promise<boolean> {
+    return path.extname(filePath).toLowerCase() === '.wav';
   }
 
-  private createSession(clientId: string, emit: (event: string, data: any) => void): SessionData {
-    // return {
-    //   clientId,
-    //   sessionReady: false,
-    //   sessionEnded: false,
-    //   audioQueue: [],
-    //   reconnectAttempts: 0,
-    // };
-    return {
-      canopus: new Canopus({ apiKey: this.apiKey, link: this.link }),
-      isActive: false,
-      startTime: Date.now(),
-      clientId,
-      modelId: this.modelId,
-      audioBytesAccumulated: 0,
-      sampleRateHint: 16000,
-      bytesPerSample: 2,
-      channels: 1
-    };
-  }
+  // Convert any audio file to WAV using ffmpeg
+  async convertToWav(inputPath: string, outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cmd = `ffmpeg -y -i "${inputPath}" -ac 1 -ar 16000 -sample_fmt s16 "${outputPath}"`;
+    child_process.exec(cmd, (err, stdout, stderr) => {
+      if (err) {
+        this.logger.error('Error converting to WAV:', err.message);
+        return reject(err);
+      }
+      this.logger.log('Conversion to WAV completed: ' + outputPath);
+      resolve();
+    });
+  });
+}
 
-  private startSession(session: SessionData, emit: (event: string, data: any) => void, callbacks: any) {
-    const sessionId = session.clientId
-    session.canopus
-      .startSttWebSocketSession(
-        this.modelId,
-        { language: 'en', sample_rate: 16000, encoding: 'audio/wav' },
-        {
-          ...callbacks,
-          onSessionStarted: (sessionData) => {
-            session.isActive = true;
-            console.log(`STT WebSocket session started for session ${sessionId}`);
-            if (callbacks.onSessionStarted) {
-              callbacks.onSessionStarted(sessionData);
-            }
-          },
-          onSessionEnded: async (sessionData) => {
-            session.isActive = false;
-            // await finalizeSession();
 
-            console.log(`STT WebSocket session ended for session ${sessionId}`);
-            if (callbacks.onSessionEnded) {
-              callbacks.onSessionEnded(sessionData);
-            }
-          },
-          onError: (error) => {
-            console.error(`STT WebSocket error for session ${sessionId}:`, error);
-            if (callbacks.onError) {
-              callbacks.onError(error);
-            }
-          },
-          onDisconnect: async () => {
-            // Some gateways surface onDisconnect; ensure we finalize once
-            // try { await finalizeSession(); } catch { }
-            if (callbacks.onDisconnect) callbacks.onDisconnect();
-          }
-        }
-      )
-      .catch((err) => {
-        console.error(`❌ Failed to start STT session for ${session.clientId}:`, err);
-        emit('stt-error', err);
-      });
-  }
+  // Transcribe audio (convert to WAV if needed)
+  async transcribeAudio(filePath: string): Promise<string> {
+    if (!fs.existsSync(filePath)) throw new Error('Audio file not found');
 
-     async sendAudioChunk(sessionId: string, audioData: any): Promise<void> {
-        const session = this.sessions.get(sessionId);
-        
-        if (!session) {
-            throw new Error(`STT WebSocket session ${sessionId} not found`);
-        }
-
-        if (!session.isActive) {
-            throw new Error(`STT WebSocket session ${sessionId} is not active`);
-        }
-
-        try {
-            let payload: any;
-            if (typeof audioData === 'string') {
-                payload = audioData;
-                // Approximate bytes from base64 length
-                const approxBytes = Math.floor((audioData.length * 3) / 4);
-                session.audioBytesAccumulated = (session.audioBytesAccumulated || 0) + approxBytes;
-            } else {
-                const audio = audioData.audio || audioData;
-                const encoding = audioData.encoding || 'audio/wav';
-                const sample_rate = audioData.sample_rate || 16000;
-                payload = { audio, encoding, sample_rate }; 
-
-                session.sampleRateHint = sample_rate;
-                // Estimate bytes for raw base64 payload if string
-                if (typeof audio === 'string') {
-                    const approxBytes = Math.floor((audio.length * 3) / 4);
-                    session.audioBytesAccumulated = (session.audioBytesAccumulated || 0) + approxBytes;
-                } else if (audio instanceof Buffer) {
-                    session.audioBytesAccumulated = (session.audioBytesAccumulated || 0) + audio.byteLength;
-                }
-            }
-            session.canopus.sendSttAudioChunk(payload);
-        } catch (err) {
-            console.error(`Error sending audio chunk for session ${sessionId}:`, err);
-            throw err;
-        }
+    let wavPath = filePath;
+    if (!filePath.toLowerCase().endsWith('.wav')) {
+      this.logger.log('File is not WAV. Converting...');
+      wavPath = filePath + '.wav';
+      await this.convertToWav(filePath, wavPath);
+      fs.unlinkSync(filePath); // delete original non-WAV file
+      this.logger.log('Conversion done. Using WAV file: ' + wavPath);
+    } else {
+      this.logger.log('File is already WAV. No conversion needed.');
     }
-
-
-  async endSession(clientId: string) {
-    const session = this.sessions.get(clientId);
-    if (!session || !session.isActive) return;
-
+    // return 'Joo'
+    // Call Canopus STT
     try {
-      await session.canopus.endSttWebSocketSession();
-      session.isActive = false;
-      console.log(`🛑 Session ended manually for ${clientId}`);
-    } catch (error) {
-      console.error(`❌ Error ending session for ${clientId}:`, error);
+      
+      const response = await this.canopus.callSttModel(this.modelId, wavPath);
+      const text = response?.data?.transcription || '';
+      this.logger.log('Transcribed Text: ' + text);
+      return text;
+    } catch (err: any) {
+      this.logger.error('STT Error:', err?.message || err);
+      throw new Error('Failed to transcribe audio. Please check the model ID and Canopus service.');
     }
   }
+  // ----- Placeholder methods for multi-model logging -----
 
-  async closeSession(clientId: string) {
-    await this.endSession(clientId);
-    this.sessions.delete(clientId);
-    console.log(`🗑️ Session closed for client: ${clientId}`);
-  }
+
 }

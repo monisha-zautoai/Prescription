@@ -1,11 +1,11 @@
+// processed-text.module.ts
 import { Module } from '@nestjs/common';
-import { ProcessedTextController } from './text.controller';
-import { ProcessedTextService } from './text.service';
-import { CanopusModule } from 'src/canopus/canopus.module';
+import { ProcessedTextService } from 'src/processed-text/text.service';
+import { CanopusModule } from '../canopus/canopus.module';
 
 @Module({
   imports: [CanopusModule],
-  controllers: [ProcessedTextController],
-  providers: [ProcessedTextService], // ✅ Add service here
+  providers: [ProcessedTextService],
+  exports: [ProcessedTextService], 
 })
 export class ProcessedTextModule {}

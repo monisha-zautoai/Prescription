@@ -1,233 +1,393 @@
 <div class="container">
-
   <!-- Header -->
   <header class="app-header">
-    <h1 class="header-title">💊 Medication Transcription & Analysis</h1>
+    <h1 class="header-title">Prescriptions</h1>
     <div class="top-controls">
-      <button class="btn speak" (click)="openPatientInfoDialog()">🎤 Speak</button>
+      <button class="btn btn-voice" (click)="openSTTDialog()" [disabled]="recording || sending">
+        🎤 Voice Rx
+      </button>
+      <input
+        type="file"
+        accept=".wav"
+        id="audioUpload"
+        hidden
+        (change)="onAudioFileSelected($event)"
+      />
+      <button class="btn btn-upload" (click)="triggerFileUpload()" [disabled]="sending">
+        ⬆️ Upload Audio
+      </button>
     </div>
   </header>
 
-  <!-- Medication Table -->
-  <section class="medicine-table">
-    <table>
+  <!-- Medication Table Card -->
+  <section class="medicine-table-card">
+    <table class="medicine-table">
       <thead>
         <tr>
-          <th>Medicine</th>
-          <th>Dose (M-A-N)</th>
+          <th>Name</th>
+          <th>Dose</th>
           <th>When</th>
           <th>Frequency</th>
           <th>Duration</th>
           <th>Notes</th>
-          <th>Suggestions</th>
-          <th>Action</th>
+          <th>Actions</th>
         </tr>
       </thead>
+
       <tbody>
-        <tr *ngIf="processedResult?.length === 0">
-          <td colspan="8" class="no-data">-- No data yet --</td>
+        <!-- Input Row if no processed medicines -->
+        <tr *ngIf="!processedResult || processedResult.length === 0" class="input-row">
+          <td class="medicine-name-cell">
+            <div class="name-input-wrapper">
+              <input
+                type="text"
+                class="form-input"
+                placeholder="Search tablet name..."
+                [(ngModel)]="searchText"
+              />
+            </div>
+          </td>
+
+          <!-- Dose -->
+          <td>
+            <div class="dose-group">
+              <input type="number" class="dose-input" [(ngModel)]="defaultDose1" min="0" />
+              <span class="dose-separator">-</span>
+              <input type="number" class="dose-input" [(ngModel)]="defaultDose2" min="0" />
+              <span class="dose-separator">-</span>
+              <input type="number" class="dose-input" [(ngModel)]="defaultDose3" min="0" />
+            </div>
+          </td>
+
+          <!-- When -->
+          <td class="dropdown-cell">
+            <input
+              type="text"
+              class="form-input dropdown-input"
+              placeholder="When to take"
+              [(ngModel)]="whenValue"
+              (focus)="showDefaultWhenDropdown = true"
+              (blur)="hideDropdown(null, 'when')"
+            />
+            <div class="dropdown-suggestions" *ngIf="showDefaultWhenDropdown">
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'when', 'Before meals')">Before meals</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'when', 'After meals')">After meals</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'when', 'With meals')">With meals</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'when', 'On empty stomach')">On empty stomach</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'when', 'As needed')">As needed</div>
+            </div>
+          </td>
+
+          <!-- Frequency -->
+          <td class="dropdown-cell">
+            <input
+              type="text"
+              class="form-input dropdown-input"
+              placeholder="Frequency"
+              [(ngModel)]="frequencyValue"
+              (focus)="showDefaultFrequencyDropdown = true"
+              (blur)="hideDropdown(null, 'frequency')"
+            />
+            <div class="dropdown-suggestions" *ngIf="showDefaultFrequencyDropdown">
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'frequency', 'Daily')">Daily</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'frequency', 'Alternative Days')">Alternative Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'frequency', 'Weekly')">Weekly</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'frequency', 'Weekly Twice')">Weekly Twice</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'frequency', 'Weekly Thrice')">Weekly Thrice</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'frequency', 'Subcutaneous')">Subcutaneous</div>
+            </div>
+          </td>
+
+          <!-- Duration -->
+          <td class="dropdown-cell">
+            <input
+              type="text"
+              class="form-input dropdown-input"
+              placeholder="Duration"
+              [(ngModel)]="durationValue"
+              (focus)="showDefaultDurationDropdown = true"
+              (blur)="hideDropdown(null, 'duration')"
+            />
+            <div class="dropdown-suggestions" *ngIf="showDefaultDurationDropdown">
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'duration', '1 Day')">1 Day</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'duration', '2 Days')">2 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'duration', '3 Days')">3 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'duration', '5 Days')">5 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'duration', '7 Days')">7 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(null, 'duration', '10 Days')">10 Days</div>
+            </div>
+          </td>
+
+          <!-- Notes -->
+          <td>
+            <input type="text" class="form-input" placeholder="Notes" [(ngModel)]="notesValue" />
+          </td>
+
+          <td class="action-cell"></td>
         </tr>
 
-        <tr *ngFor="let med of processedResult" [ngClass]="{'warning-row': isMedicineUnsuitable(med)}">
-          <td><input [(ngModel)]="med.selected.name" /></td>
-
-          <td class="dose-container horizontal-dose">
-            <input type="number" min="0" [(ngModel)]="med.dose1" class="dose-box" placeholder="0" />
-            <span>-</span>
-            <input type="number" min="0" [(ngModel)]="med.dose2" class="dose-box" placeholder="0" />
-            <span>-</span>
-            <input type="number" min="0" [(ngModel)]="med.dose3" class="dose-box" placeholder="0" />
+        <!-- Processed medicines -->
+        <tr *ngFor="let med of processedResult; let i = index" class="data-row">
+          <td class="medicine-name-cell">
+            <div class="name-input-wrapper">
+              <input
+                type="text"
+                class="form-input"
+                [(ngModel)]="med.selected.name"
+                placeholder="Search tablet name..."
+              />
+              <span class="separator">|</span>
+              <span
+                *ngIf="med.suggestions?.length"
+                class="pill-badge"
+                (click)="openSuggestionDialog(med)"
+              >
+                💊
+                <span class="pill-glow"></span>
+              </span>
+            </div>
           </td>
 
-          <td><input [(ngModel)]="med.when" /></td>
-          <td><input [(ngModel)]="med.frequency" /></td>
-          <td><input [(ngModel)]="med.duration" /></td>
-          <td><input [(ngModel)]="med.notes" /></td>
-
+          <!-- Dose -->
           <td>
-            <span *ngIf="med.suggestions?.length" class="eye-icon" (click)="openSuggestionDialog(med)">👁️</span>
+            <div class="dose-group">
+              <input type="number" class="dose-input" [(ngModel)]="med.dose1" min="0" />
+              <span class="dose-separator">-</span>
+              <input type="number" class="dose-input" [(ngModel)]="med.dose2" min="0" />
+              <span class="dose-separator">-</span>
+              <input type="number" class="dose-input" [(ngModel)]="med.dose3" min="0" />
+            </div>
           </td>
 
-          <td>
-            <button *ngIf="hasSafeAlternative(med)" class="btn use-btn" (click)="fetchAndShowUseDialog(med)">
-              ⚠️ Use
-            </button>
+          <!-- When -->
+          <td class="dropdown-cell">
+            <input
+              type="text"
+              class="form-input dropdown-input"
+              [(ngModel)]="med.when"
+              (focus)="med.showWhenDropdown = true"
+              (blur)="hideDropdown(med, 'when')"
+            />
+            <div class="dropdown-suggestions" *ngIf="med.showWhenDropdown">
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'when', 'Before meals')">Before meals</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'when', 'After meals')">After meals</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'when', 'With meals')">With meals</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'when', 'On empty stomach')">On empty stomach</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'when', 'As needed')">As needed</div>
+            </div>
+          </td>
 
-            <button *ngIf="med.previousSelected" class="btn revert-btn" (click)="revertMedicine(med)">Revert</button>
+          <!-- Frequency -->
+          <td class="dropdown-cell">
+            <input
+              type="text"
+              class="form-input dropdown-input"
+              [(ngModel)]="med.frequency"
+              (focus)="med.showFrequencyDropdown = true"
+              (blur)="hideDropdown(med, 'frequency')"
+            />
+            <div class="dropdown-suggestions" *ngIf="med.showFrequencyDropdown">
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'frequency', 'Daily')">Daily</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'frequency', 'Alternative Days')">Alternative Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'frequency', 'Weekly')">Weekly</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'frequency', 'Weekly Twice')">Weekly Twice</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'frequency', 'Weekly Thrice')">Weekly Thrice</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'frequency', 'Subcutaneous')">Subcutaneous</div>
+            </div>
+          </td>
+
+          <!-- Duration -->
+          <td class="dropdown-cell">
+            <input
+              type="text"
+              class="form-input dropdown-input"
+              [(ngModel)]="med.duration"
+              (focus)="med.showDurationDropdown = true"
+              (blur)="hideDropdown(med, 'duration')"
+            />
+            <div class="dropdown-suggestions" *ngIf="med.showDurationDropdown">
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'duration', '1 Day')">1 Day</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'duration', '2 Days')">2 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'duration', '3 Days')">3 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'duration', '5 Days')">5 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'duration', '7 Days')">7 Days</div>
+              <div class="suggestion-item" (mousedown)="selectOption(med, 'duration', '10 Days')">10 Days</div>
+            </div>
+          </td>
+
+          <!-- Notes -->
+          <td>
+            <input type="text" class="form-input" [(ngModel)]="med.notes" />
+          </td>
+
+          <!-- Delete Button -->
+          <td class="action-cell">
+            <button class="btn btn-cancel-row" (click)="openDeleteDialog(med)">❌</button>
           </td>
         </tr>
       </tbody>
     </table>
+
+    
   </section>
 
-  <!-- 🧾 Patient Info Dialog -->
-<div *ngIf="showPatientInfoDialog" class="dialog-overlay">
-  <div class="dialog-box patient-info-dialog">
+  <!-- ================= DIALOGS OUTSIDE TABLE ================= -->
+
+  <!-- Delete Medicine Confirmation Dialog -->
+  <div *ngIf="showDeleteDialog" class="dialog-overlay" (click)="closeDeleteDialog()">
+    <div class="dialog-box delete-dialog" (click)="$event.stopPropagation()">
+      <div class="dialog-header">
+        <h3>⚠️ Delete Medicine</h3>
+        <button class="close-btn" (click)="closeDeleteDialog()">✕</button>
+      </div>
+      <div class="dialog-content">
+        <p>Are you sure you want to delete <strong>{{ medicineToDelete?.selected?.name }}</strong>?</p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-cancel" (click)="closeDeleteDialog()">Cancel</button>
+        <button class="btn btn-delete" (click)="confirmDeleteMedicine()">Delete</button>
+      </div>
+    </div>
+  </div>
+<div *ngIf="showSTTDialog" class="dialog-overlay" (click)="closeSTTDialog()">
+  <div class="dialog-box stt-dialog" (click)="$event.stopPropagation()">
     <div class="dialog-header">
-      <h3>🧾 Patient Information</h3>
-      <button class="close-btn" (click)="closePatientInfoDialog()">✖</button>
+      <h3>🎙️ Voice Prescription</h3>
+      <button class="close-btn" (click)="closeSTTDialog()" [disabled]="sending || sendEnabled">✕</button>
     </div>
 
-    <div class="dialog-body">
-      <!-- Voice Input Toggle -->
-      <div class="voice-toggle">
-        <label>
-          <input type="checkbox" [(ngModel)]="voiceInputEnabled" />
-          <span>Enable Voice Input 🎤</span>
-        </label>
+    <div class="stt-content">
+      <!-- Listening Animation -->
+      <div *ngIf="recordingState === 'recording'" class="listening-state">
+        <div class="waveform-container">
+          <div class="waveform">
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+            <div class="wave-bar"></div>
+          </div>
+        </div>
+        <p class="listening-text">🎧 Listening...</p>
       </div>
 
-      <div class="form-grid">
-        <!-- Age -->
-        <div class="form-field">
-          <label>Age</label>
-          <div class="input-group">
-            <input type="number" [(ngModel)]="patientInfo.age" placeholder="Enter age" />
-            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('age')">🎤</button>
-          </div>
-        </div>
+      <!-- Paused -->
+      <div *ngIf="recordingState === 'paused'" class="listening-state">
+        <p class="listening-text">⏸️ Paused</p>
+      </div>
 
-        <!-- Gender -->
-        <div class="form-field">
-          <label>Gender</label>
-          <select [(ngModel)]="patientInfo.gender">
-            <option value="" disabled selected>Select Gender</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-
-        <!-- Chief Complaint -->
-        <div class="form-field full-width">
-          <label>Chief Complaint</label>
-          <div class="input-group">
-            <input [(ngModel)]="patientInfo.chiefComplaint" placeholder="e.g. Fever, Headache..." />
-            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('chiefComplaint')">🎤</button>
-          </div>
-        </div>
-
-        <!-- Drug Allergies -->
-        <div class="form-field full-width">
-          <label>Drug Allergies</label>
-          <div class="input-group">
-            <input [(ngModel)]="patientInfo.drugAllergies" placeholder="e.g. Penicillin, Sulfa drugs..." />
-            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('drugAllergies')">🎤</button>
-          </div>
-        </div>
-
-        <!-- History / Previous Illness -->
-        <div class="form-field full-width">
-          <label>History of Previous Illness</label>
-          <div class="input-group">
-            <input [(ngModel)]="patientInfo.previousConsultant" placeholder="Optional" />
-            <button *ngIf="voiceInputEnabled" class="voice-btn" (click)="startVoiceRecognition('previousConsultant')">🎤</button>
-          </div>
-        </div>
+      <!-- Stopped / Preview -->
+      <div *ngIf="audioURL && recordingState === 'stopped'" class="audio-preview">
+        <p class="preview-label">🔊 Preview your recording:</p>
+        <audio [src]="audioURL" controls></audio>
       </div>
     </div>
 
-    <div class="dialog-footer">
-      <button class="btn next-btn" (click)="goToSTTDialog()">Next ➡️</button>
+    <div class="dialog-footer-with-mic">
+      <div class="dialog-buttons-right">
+
+        <!-- Pause / Resume -->
+        <button 
+          class="btn btn-pause" 
+          (click)="toggleRecording()" 
+          [disabled]="sending || sendEnabled || (recordingState !== 'recording' && recordingState !== 'paused')">
+          <span *ngIf="recordingState === 'recording'">⏸ Pause</span>
+          <span *ngIf="recordingState === 'paused'">▶ Resume</span>
+        </button>
+
+        <!-- Stop -->
+        <button 
+          class="btn btn-cancel" 
+          (click)="stopRecording()" 
+          [disabled]="sending || sendEnabled || (recordingState !== 'recording' && recordingState !== 'paused')">
+          ⏹ Stop
+        </button>
+
+        <!-- Send Prescription -->
+        <button 
+          class="btn btn-send" 
+          (click)="sendTranscription()" 
+          [disabled]="!sendEnabled || sending">
+          <span *ngIf="!sending">📤 Send Prescription</span>
+          <span *ngIf="sending">⏳ Sending...</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>
 
-  <!-- STT Dialog -->
-  <div *ngIf="showSTTDialog" class="dialog-overlay">
-    <div class="dialog-box compact-dialog stt-dialog">
-      <div class="dialog-header">
-        <h3>🎙️ Speak Now</h3>
-        <button class="close-btn" (click)="closeSTTDialog()">❌</button>
-      </div>
-      <p class="stt-subtitle">Start speaking. Use Pause/Resume if needed.</p>
-      <div class="dialog-buttons">
-        <button class="btn pause-btn" (click)="togglePauseResume()">{{ recordingPaused ? 'Resume' : 'Pause' }}</button>
-        <button class="btn send-btn" (click)="sendTranscription()">Send ✅</button>
-        <button class="btn cancel-btn" (click)="closeSTTDialog()">Cancel ❌</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Clinical Warning / Alternative Modal -->
-  <div *ngIf="showClinicalWarningDialog && selectedAlternativeForRow" class="dialog-overlay">
-    <div class="dialog-box compact-dialog">
-      <div class="dialog-header">
-        <h3>⚠️ Clinical Warning</h3>
-        <button class="close-btn" (click)="closeClinicalWarningDialog()">❌</button>
-      </div>
-
-      <div class="warning-text">{{ selectedAlternativeForRow.selected.clinical_warning?.message }}</div>
-
-      <ng-container *ngIf="selectedAlternativeForRow.selected.clinical_warning as cw">
-        <div class="alt-container" *ngIf="cw.alternative_suggestion as alt">
-          <h4>💊 Suggested Alternative:</h4>
-          <table class="suggestion-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Composition</th>
-                <th>Price</th>
-                <th>Confidence</th>
-                <th>Reason</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>{{ alt.name }}</td>
-                <td>{{ alt.composition || '-' }}</td>
-                <td>{{ alt.price || '-' }}</td>
-                <td>{{ alt.confidence || 0 | number:'1.2-2' }}</td>
-                <td>{{ alt.reason || '-' }}</td>
-                <td>
-                  <button class="btn select-btn"
-                    (click)="swapSuggestion(selectedAlternativeForRow!, alt); closeClinicalWarningDialog()">Select</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div *ngIf="!cw.alternative_suggestion">
-          <p>No safe alternatives found for this medicine.</p>
-        </div>
-      </ng-container>
-    </div>
-  </div>
 
   <!-- Suggestions Dialog -->
-  <div *ngIf="showSuggestionDialog && currentMedForSuggestion" class="dialog-overlay">
-    <div class="dialog-box compact-dialog">
+  <div *ngIf="showSuggestionDialog && currentMedForSuggestion" class="dialog-overlay" (click)="closeSuggestionDialog()">
+    <div class="dialog-box suggestions-dialog" (click)="$event.stopPropagation()">
       <div class="dialog-header">
-        <h3>💡 Suggestions for {{ currentMedForSuggestion.selected.name }}</h3>
-        <button class="close-btn" (click)="closeSuggestionDialog()">❌</button>
+        <h3>💊 Suggested Medications</h3>
+        <button class="close-btn" (click)="closeSuggestionDialog()" [disabled]="sending">✕</button>
       </div>
 
-      <table class="suggestion-table">
-        <thead>
-          <tr>
-            <th>Medicine</th>
-            <th>Composition</th>
-            <th>Price (₹)</th>
-            <th>Confidence</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let s of currentMedForSuggestion.filteredSuggestions"
-            [ngClass]="{'warning-row': s.clinical_warning}">
-            <td>{{ s.name }}</td>
-            <td>{{ s.composition || '-' }}</td>
-            <td>{{ s.price || '-' }}</td>
-            <td>{{ s.confidence || 0 | number:'1.2-2' }}</td>
-            <td>
-              <button class="btn select-btn"
-                (click)="swapSuggestion(currentMedForSuggestion, s); closeSuggestionDialog()">Select</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- Search & Cards -->
+      <div class="search-controls">
+        <input
+          type="text"
+          class="search-input"
+          [(ngModel)]="searchText"
+          placeholder="Search medicine..."
+          (keydown.enter)="searchMedicineSuggestions()"
+        />
+        <button class="btn btn-search" (click)="searchMedicineSuggestions()" [disabled]="sending || loading">
+          🔍 Search
+        </button>
+       <button class="btn btn-reset" 
+        (click)="resetSuggestions()" 
+        [disabled]="!searchDone || sending || loading">
+  ↻ Reset
+</button>
+
+      </div>
+
+      <div class="suggestions-grid">
+        <div *ngFor="let s of currentMedForSuggestion.filteredSuggestions" class="medicine-card">
+          <div class="card-header">
+            <div class="medicine-icon">💊</div>
+            <h4 class="medicine-name">{{ s.name }}</h4>
+          </div>
+          
+          <div class="card-body">
+            <p class="medicine-composition">{{ s.composition || 'No composition available' }}</p>
+            <div class="medicine-price">
+              <span class="price-icon">💰</span>
+              <span class="price-value">{{ s.price || 'N/A' }}</span>
+            </div>
+            <div class="medicine-confidence" *ngIf="s.confidence">
+              <span class="confidence-label">Match:</span>
+              <span class="confidence-value">{{ s.confidence | number:'1.0-0' }}%</span>
+            </div>
+          </div>
+
+          <div class="card-footer">
+            <button 
+              class="btn btn-use-medication" 
+              (click)="swapSuggestion(currentMedForSuggestion, s); closeSuggestionDialog()" 
+              [disabled]="sending">
+              ✓ Use this medication
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="!currentMedForSuggestion.filteredSuggestions?.length" class="no-results">
+        <div class="no-results-icon">🔍</div>
+        <p>No suggestions found. Try a different search term.</p>
+      </div>
+
+      <div class="dialog-bottom-actions">
+        <button class="btn btn-close-dialog" (click)="closeSuggestionDialog()">Close</button>
+      </div>
+
+      <div *ngIf="loading" class="loading-overlay">
+        <div class="spinner"></div>
+      </div>
     </div>
   </div>
-
 </div>

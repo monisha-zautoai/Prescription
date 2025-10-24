@@ -53,12 +53,12 @@ async generateTTS(
       return { error: 'Audio file and model are required' };
     }
 
-    const transcription = await this.canopusService.callSTT(
-      body.model,
-      file.buffer,
-      body.prompt
-    );
+    // const transcription = await this.canopusService.callSTT(
+    //   body.model,
+    //   file.buffer,
+    //   body.prompt
+    // );
 
-    return { transcription };
+    // return { transcription };
   }
 }
