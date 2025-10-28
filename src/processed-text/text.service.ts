@@ -220,14 +220,15 @@ return [{
 */
 
 
-  /**
-   * Extract medicine names from speech-to-text sentence and return suggestions for each.
-   */
-  import { Injectable } from '@nestjs/common'; 
+/**
+ * Extract medicine names from speech-to-text sentence and return suggestions for each.
+ */
+import { Injectable } from '@nestjs/common';
 import { CanopusService } from 'src/canopus/canopus.service';
 import { prompts } from 'src/prompts/medicationExtraction';
 import axios from 'axios';
 import { extractJsonFromMarkdown } from 'src/utils/json-helper';
+import { ConfigurablesService } from 'src/configurables/configurables.service';
 
 
 export interface MedicineSuggestion {
@@ -257,14 +258,17 @@ function medNameOnlyFromText(prompt: string): string {
 
 @Injectable()
 export class ProcessedTextService {
-  constructor(private readonly canopus: CanopusService) {}
+  constructor(
+    private readonly canopus: CanopusService,
+    private readonly configurablesService: ConfigurablesService
+  ) { }
 
   /**
    * Extract medicine names from speech-to-text sentence and return suggestions for each.
    */
   async extractMedicationDetails(text: string): Promise<EnhancedMedication[]> {
     try {
-      const model = 'Azure Monesh GPT 4o ';
+      const model = this.configurablesService.getconfigurable('EXTRACTION_MODEL');
 
       // 🔹 Step 1: Extract medicine names and details from the full text
       const firstPrompt = prompts.MEDICATION_EXTRACTION_PROMPT.replaceAll(
@@ -325,71 +329,76 @@ export class ProcessedTextService {
       return [];
     }
   }
-async getSimilarMedicineSuggestions(name: string): Promise<MedicineSuggestion[]> {
-  const prompt = prompts.MEDICATION_BASIC_PROMPT2.replace(
-    '{{medicationText}}',
-    JSON.stringify({ medicine_name: name })
-  );
+  async getSimilarMedicineSuggestions(name: string): Promise<MedicineSuggestion[]> {
+    const prompt = prompts.MEDICATION_BASIC_PROMPT2.replace(
+      '{{medicationText}}',
+      JSON.stringify({ medicine_name: name })
+    );
 
-  let suggestions = await this.callMedicineEnhancer(prompt);
-  suggestions.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  return suggestions.slice(0, 10); // top 10
-}
+    let suggestions = await this.callMedicineEnhancer(prompt);
+    suggestions.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+    return suggestions.slice(0, 10); // top 10
+  }
 
   /**
    * Call Perplexity API to get top medicine suggestions for each name
    */
   async callMedicineEnhancer(promptText: string): Promise<MedicineSuggestion[]> {
     try {
-      const apiKey = process.env.PERPLEXITY_KEY;
-      const model = process.env.MEDICAL_ENCHANCER_MODEL;
-
-      const body = {
-        model,
-        messages: [{ role: 'user', content: promptText }],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            schema: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: { type: 'string' },
-                  composition: { type: 'string' },
-                  price: { type: 'string' },
-                  confidence: { type: 'number' }
+      const apiKey = this.configurablesService.getconfigurable('PERPLEXITY_KEY');
+      const model = this.configurablesService.getconfigurable('MEDICAL_ENCHANCER_MODEL') || '';
+      if (apiKey?.trim()) {
+        const body = {
+          model,
+          messages: [{ role: 'user', content: promptText }],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              schema: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string' },
+                    composition: { type: 'string' },
+                    price: { type: 'string' },
+                    confidence: { type: 'number' }
+                  },
+                  required: ['name', 'confidence'],
+                  additionalProperties: false
                 },
-                required: ['name','confidence'],
-                additionalProperties: false
-              },
-              minItems: 10,
-              maxItems: 10
+                minItems: 10,
+                maxItems: 10
+              }
             }
           }
+        };
+
+        const { data } = await axios.post(
+          'https://api.perplexity.ai/chat/completions',
+          body,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+
+        let raw = data?.choices?.[0]?.message?.content ?? '';
+        raw = raw.replace(/<\/?think>/g, '').trim();
+
+        const parsed: MedicineSuggestion[] = extractJsonFromMarkdown(raw) || [];
+
+        // ✅ Return top 5 valid medicine suggestions
+        if (parsed.length && parsed.every((s) => s.name)) {
+          parsed.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+          return parsed.slice(0, 10);
         }
-      };
 
-      const { data } = await axios.post(
-        'https://api.perplexity.ai/chat/completions',
-        body,
-        { headers: { Authorization: `Bearer ${apiKey}` } }
-      );
-
-      let raw = data?.choices?.[0]?.message?.content ?? '';
-      raw = raw.replace(/<\/?think>/g, '').trim();
-
-      const parsed: MedicineSuggestion[] = extractJsonFromMarkdown(raw) || [];
-
-      // ✅ Return top 5 valid medicine suggestions
-      if (parsed.length && parsed.every((s) => s.name)) {
-        parsed.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-        return parsed.slice(0, 10);
+        // ✅ Fallback: return at least one entry
+        const medName = medNameOnlyFromText(promptText);
+        return [{ name: medName, composition: 'N/A', price: 'N/A', confidence: 0 }];
+      } else {
+        const response = await this.canopus.callTextModel(promptText, model);
+        const parsed = extractJsonFromMarkdown(response.content) || [];
+        return parsed;
       }
-
-      // ✅ Fallback: return at least one entry
-      const medName = medNameOnlyFromText(promptText);
-      return [{ name: medName, composition: 'N/A', price: 'N/A', confidence: 0 }];
     } catch (error) {
       console.error('❌ Error calling Medicine Enhancer:', error);
       const medName = medNameOnlyFromText(promptText);

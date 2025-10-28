@@ -2237,3 +2237,197 @@
 .btn-send:disabled {
   background-color: #6ea8ff;
 }
+
+/* ============================================
+   CONFIGURABLES DIALOG STYLES
+   ============================================ */
+.btn-configurables {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.btn-configurables:hover:not(:disabled) {
+  background-color: #138496;
+}
+
+.configurables-dialog {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.configurables-content {
+  padding: 20px 0;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+}
+
+.loading-state .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+.configurables-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.configurable-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.configurable-label {
+  font-weight: 600;
+  color: #495057;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.configurable-input-group {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.configurable-input {
+  width: 100%;
+  padding: 12px 40px 12px 16px;
+  border: 2px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.configurable-input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+  outline: none;
+}
+
+.input-icon {
+  position: absolute;
+  right: 12px;
+  color: #6c757d;
+  font-size: 16px;
+  pointer-events: none;
+}
+
+.configurable-description {
+  color: #6c757d;
+  font-size: 12px;
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.no-configurables {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+}
+
+.no-config-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.no-configurables p {
+  margin: 0;
+  font-size: 16px;
+}
+
+/* Configurables Dialog Header */
+.configurables-dialog .dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #dee2e6;
+  margin-bottom: 20px;
+}
+
+.configurables-dialog .dialog-header h3 {
+  margin: 0;
+  flex: 1;
+}
+
+.header-status {
+  flex: 1;
+  text-align: center;
+}
+
+.unsaved-indicator {
+  color: #dc3545;
+  font-size: 12px;
+  font-weight: 600;
+  animation: pulse-indicator 2s infinite;
+}
+
+@keyframes pulse-indicator {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Configurables Dialog Footer */
+.configurables-dialog .dialog-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #dee2e6;
+  margin-top: 20px;
+}
+
+.configurables-dialog .btn-save {
+  background-color: #28a745;
+  color: white;
+  min-width: 120px;
+}
+
+.configurables-dialog .btn-save:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.configurables-dialog .btn-save:disabled {
+  background-color: #6c757d;
+  cursor: not-allowed;
+}
+
+.configurables-dialog .btn-cancel {
+  background-color: #6c757d;
+  color: white;
+}
+
+.configurables-dialog .btn-cancel:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+/* Responsive Design for Configurables */
+@media (max-width: 768px) {
+  .configurables-dialog {
+    width: 95%;
+    max-height: 85vh;
+  }
+  
+  .configurables-form {
+    gap: 16px;
+  }
+  
+  .configurable-input {
+    padding: 10px 36px 10px 12px;
+    font-size: 13px;
+  }
+}

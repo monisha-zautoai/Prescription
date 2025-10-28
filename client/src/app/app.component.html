@@ -3,6 +3,9 @@
   <header class="app-header">
     <h1 class="header-title">Prescriptions</h1>
     <div class="top-controls">
+      <button class="btn btn-configurables" (click)="openConfigurablesDialog()" [disabled]="configurablesLoading">
+        ⚙️ Configurables
+      </button>
       <button class="btn btn-voice" (click)="openSTTDialog()" [disabled]="recording || sending">
         🎤 Voice Rx
       </button>
@@ -317,6 +320,65 @@
   </div>
 </div>
 
+  <!-- Configurables Dialog -->
+  <div *ngIf="showConfigurablesDialog" class="dialog-overlay" (click)="closeConfigurablesDialog()">
+    <div class="dialog-box configurables-dialog" (click)="$event.stopPropagation()">
+      <div class="dialog-header">
+        <h3>⚙️ System Configurables</h3>
+        <div class="header-status">
+          <span *ngIf="hasUnsavedChanges()" class="unsaved-indicator">● Unsaved changes</span>
+        </div>
+        <button class="close-btn" (click)="closeConfigurablesDialog()" [disabled]="configurablesLoading">✕</button>
+      </div>
+
+      <div class="configurables-content">
+        <div *ngIf="configurablesLoading" class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading configurables...</p>
+        </div>
+
+        <div *ngIf="!configurablesLoading && configurables" class="configurables-form">
+          <div class="configurable-item" *ngFor="let item of configurables | keyvalue; trackBy: trackByConfigKey">
+            <label class="configurable-label" [for]="'config-' + getKeyAsString(item)">
+              {{ getDisplayName(getKeyAsString(item)) }}:
+            </label>
+            <div class="configurable-input-group">
+              <input
+                [id]="'config-' + getKeyAsString(item)"
+                type="text"
+                class="form-input configurable-input"
+                [(ngModel)]="configurables[getKeyAsString(item)]"
+                [placeholder]="getPlaceholder(getKeyAsString(item))"
+              />
+              <span class="input-icon">🔧</span>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="!configurablesLoading && (!configurables || (configurables | keyvalue)?.length === 0)" class="no-configurables">
+          <div class="no-config-icon">⚙️</div>
+          <p>No configurables found.</p>
+        </div>
+      </div>
+
+      <div class="dialog-footer">
+        <button class="btn btn-cancel" (click)="closeConfigurablesDialog()" [disabled]="configurablesSaving">
+          Cancel
+        </button>
+        <button 
+          class="btn btn-save" 
+          (click)="saveConfigurables()" 
+          [disabled]="!hasUnsavedChanges() || configurablesSaving">
+          <span *ngIf="!configurablesSaving">💾 Save Changes</span>
+          <span *ngIf="configurablesSaving">⏳ Saving...</span>
+        </button>
+      </div>
+
+      <div *ngIf="configurablesLoading || configurablesSaving" class="loading-overlay">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- Suggestions Dialog -->
   <div *ngIf="showSuggestionDialog && currentMedForSuggestion" class="dialog-overlay" (click)="closeSuggestionDialog()">

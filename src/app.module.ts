@@ -5,6 +5,7 @@ import { ProcessedTextModule } from './processed-text/text.module';
 import { CanopusModule } from './canopus/canopus.module';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { ConfigurablesModule } from './configurables/configurables.module';
 
 @Module({
   imports: [
@@ -18,7 +19,8 @@ import { join } from 'path';
     }),
     VoiceModule,
     ProcessedTextModule,
-    CanopusModule, 
+    CanopusModule,
+    ConfigurablesModule, 
   ],
 })
 export class AppModule {}

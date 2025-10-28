@@ -1,7 +1,7 @@
 
 // app.component.ts
-import { Component, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { NgIf, NgForOf, DecimalPipe, NgClass } from '@angular/common';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { NgIf, NgForOf, DecimalPipe, NgClass, KeyValuePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import RecordRTC from 'recordrtc';
 
@@ -53,11 +53,12 @@ interface ProcessedMedicine {
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [NgIf, NgForOf, FormsModule, NgClass, DecimalPipe],
+  imports: [NgIf, NgForOf, FormsModule, DecimalPipe, KeyValuePipe],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css']
 })
-export class AppComponent implements OnDestroy {
+export class AppComponent implements OnInit, OnDestroy {
+  url: string = ''
   transcription: string = '';
   recording = false;
   sending = false;
@@ -66,12 +67,19 @@ export class AppComponent implements OnDestroy {
   loading: boolean = false;
   selectedAudioFile: File | null = null;
   searchDone = false;
-sendEnabled: boolean = false;
-recordingState: 'idle' | 'recording' | 'paused' | 'stopped' = 'idle';
+  sendEnabled: boolean = false;
+  recordingState: 'idle' | 'recording' | 'paused' | 'stopped' = 'idle';
 
   showDeleteDialog = false;
   medicineToDelete: any = null;
-deleteIndex: number | null = null; 
+  deleteIndex: number | null = null;
+
+  // Configurables modal state
+  showConfigurablesDialog = false;
+  configurables: any = {};
+  configurablesLoading = false;
+  configurablesSaving = false;
+  originalConfigurables: any = {};
   // Dropdown states
   // For default row dropdowns (when processedResult is empty)
   whenDropdownOpen: boolean = false;
@@ -112,6 +120,16 @@ deleteIndex: number | null = null;
   originalSuggestions: MedicineSuggestion[] = [];
 
   constructor(private cdr: ChangeDetectorRef) { }
+
+  ngOnInit() {
+    // Check if current page URL contains localhost and set the URL accordingly
+    if (window.location.hostname === 'localhost') {
+      this.url = 'http://localhost:3000/';
+    } else {
+      this.url = '';
+    }
+    console.log('🌐 URL set to:', this.url);
+  }
 
   // ---------- Dropdown Management ----------
   // Add these properties to your class
@@ -190,55 +208,55 @@ deleteIndex: number | null = null;
     }, 200);
   }
   audioBufferToWav(buffer: AudioBuffer): Blob {
-  const numOfChan = buffer.numberOfChannels,
-        length = buffer.length * numOfChan * 2 + 44,
-        bufferArray = new ArrayBuffer(length),
-        view = new DataView(bufferArray),
-        channels: Float32Array[] = [],
-        sampleRate = buffer.sampleRate;
+    const numOfChan = buffer.numberOfChannels,
+      length = buffer.length * numOfChan * 2 + 44,
+      bufferArray = new ArrayBuffer(length),
+      view = new DataView(bufferArray),
+      channels: Float32Array[] = [],
+      sampleRate = buffer.sampleRate;
 
-  let offset = 0;
+    let offset = 0;
 
-  function writeString(s: string) {
-    for (let i = 0; i < s.length; i++) {
-      view.setUint8(offset++, s.charCodeAt(i));
+    function writeString(s: string) {
+      for (let i = 0; i < s.length; i++) {
+        view.setUint8(offset++, s.charCodeAt(i));
+      }
     }
-  }
 
-  // RIFF chunk descriptor
-  writeString('RIFF');
-  view.setUint32(offset, length - 8, true); offset += 4;
-  writeString('WAVE');
+    // RIFF chunk descriptor
+    writeString('RIFF');
+    view.setUint32(offset, length - 8, true); offset += 4;
+    writeString('WAVE');
 
-  // fmt sub-chunk
-  writeString('fmt ');
-  view.setUint32(offset, 16, true); offset += 4;
-  view.setUint16(offset, 1, true); offset += 2;
-  view.setUint16(offset, numOfChan, true); offset += 2;
-  view.setUint32(offset, sampleRate, true); offset += 4;
-  view.setUint32(offset, sampleRate * numOfChan * 2, true); offset += 4;
-  view.setUint16(offset, numOfChan * 2, true); offset += 2;
-  view.setUint16(offset, 16, true); offset += 2;
+    // fmt sub-chunk
+    writeString('fmt ');
+    view.setUint32(offset, 16, true); offset += 4;
+    view.setUint16(offset, 1, true); offset += 2;
+    view.setUint16(offset, numOfChan, true); offset += 2;
+    view.setUint32(offset, sampleRate, true); offset += 4;
+    view.setUint32(offset, sampleRate * numOfChan * 2, true); offset += 4;
+    view.setUint16(offset, numOfChan * 2, true); offset += 2;
+    view.setUint16(offset, 16, true); offset += 2;
 
-  // data sub-chunk
-  writeString('data');
-  view.setUint32(offset, length - offset - 4, true); offset += 4;
+    // data sub-chunk
+    writeString('data');
+    view.setUint32(offset, length - offset - 4, true); offset += 4;
 
-  for (let i = 0; i < numOfChan; i++)
-    channels.push(buffer.getChannelData(i));
+    for (let i = 0; i < numOfChan; i++)
+      channels.push(buffer.getChannelData(i));
 
-  let sample = 0;
-  for (let i = 0; i < buffer.length; i++) {
-    for (let ch = 0; ch < numOfChan; ch++) {
-      let val = Math.max(-1, Math.min(1, channels[ch][i]));
-      val = val < 0 ? val * 0x8000 : val * 0x7FFF;
-      view.setInt16(offset, val, true);
-      offset += 2;
+    let sample = 0;
+    for (let i = 0; i < buffer.length; i++) {
+      for (let ch = 0; ch < numOfChan; ch++) {
+        let val = Math.max(-1, Math.min(1, channels[ch][i]));
+        val = val < 0 ? val * 0x8000 : val * 0x7FFF;
+        view.setInt16(offset, val, true);
+        offset += 2;
+      }
     }
-  }
 
-  return new Blob([view], { type: 'audio/wav' });
-}
+    return new Blob([view], { type: 'audio/wav' });
+  }
 
 
 
@@ -251,76 +269,164 @@ deleteIndex: number | null = null;
 
   // ---------- Recording (WAV) ----------
   async startRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    this.recorder = new RecordRTC(stream, {
-      type: 'audio',
-      mimeType: 'audio/wav',
-      recorderType: RecordRTC.StereoAudioRecorder,
-      numberOfAudioChannels: 1,
-      desiredSampRate: 44100,
-    });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.recorder = new RecordRTC(stream, {
+        type: 'audio',
+        mimeType: 'audio/wav',
+        recorderType: RecordRTC.StereoAudioRecorder,
+        numberOfAudioChannels: 1,
+        desiredSampRate: 44100,
+      });
 
-    this.recorder.startRecording();
-    this.recordingState = 'recording';
-    this.recording = true;
-    console.log('🎙️ Recording started (WAV)');
-  } catch (err) {
-    console.error('Error starting recording:', err);
-    alert('Cannot access microphone');
-  }
-}
-
-openDeleteDialog(med: ProcessedMedicine) {
-  this.medicineToDelete = med;
-  this.showDeleteDialog = true;
-}
-
-confirmDeleteMedicine() {
-  if (this.medicineToDelete) {
-    const index = this.processedResult.indexOf(this.medicineToDelete);
-    if (index > -1) {
-      this.processedResult.splice(index, 1);
-      console.log('🗑️ Deleted medicine:', this.medicineToDelete.selected.name);
+      this.recorder.startRecording();
+      this.recordingState = 'recording';
+      this.recording = true;
+      console.log('🎙️ Recording started (WAV)');
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      alert('Cannot access microphone');
     }
   }
-  this.closeDeleteDialog();
-}
+
+  openDeleteDialog(med: ProcessedMedicine) {
+    this.medicineToDelete = med;
+    this.showDeleteDialog = true;
+  }
+
+  confirmDeleteMedicine() {
+    if (this.medicineToDelete) {
+      const index = this.processedResult.indexOf(this.medicineToDelete);
+      if (index > -1) {
+        this.processedResult.splice(index, 1);
+        console.log('🗑️ Deleted medicine:', this.medicineToDelete.selected.name);
+      }
+    }
+    this.closeDeleteDialog();
+  }
 
   closeDeleteDialog() {
     this.showDeleteDialog = false;
     this.medicineToDelete = null;
   }
 
-  
+  // ---------- Configurables Dialog ----------
+  async openConfigurablesDialog() {
+    this.showConfigurablesDialog = true;
+    await this.loadConfigurables();
+  }
+
+  closeConfigurablesDialog() {
+    this.showConfigurablesDialog = false;
+    this.configurables = {};
+  }
+
+  async loadConfigurables() {
+    this.configurablesLoading = true;
+    try {
+      const response = await fetch(this.url+'configurables');
+      if (!response.ok) throw new Error('Failed to fetch configurables');
+
+      this.configurables = await response.json();
+      this.originalConfigurables = { ...this.configurables }; // Store original values
+      console.log('📋 Configurables loaded:', this.configurables);
+    } catch (error) {
+      console.error('Error loading configurables:', error);
+      alert('Failed to load configurables. Please try again.');
+    } finally {
+      this.configurablesLoading = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  async saveConfigurables() {
+    this.configurablesSaving = true;
+    try {
+      // Update each changed configurable
+      for (const key of Object.keys(this.configurables)) {
+        if (this.configurables[key] !== this.originalConfigurables[key]) {
+          const response = await fetch(this.url+'configurables', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ key, value: this.configurables[key] }),
+          });
+
+          if (!response.ok) throw new Error(`Failed to update ${key}`);
+          console.log('✅ Updated configurable:', key, '=', this.configurables[key]);
+        }
+      }
+
+      // Update original values after successful save
+      this.originalConfigurables = { ...this.configurables };
+      alert('Configurables saved successfully!');
+
+    } catch (error) {
+      console.error('Error saving configurables:', error);
+      alert('Failed to save configurables. Please try again.');
+    } finally {
+      this.configurablesSaving = false;
+      this.cdr.detectChanges();
+    }
+  }
+
+  hasUnsavedChanges(): boolean {
+    if (!this.originalConfigurables || !this.configurables) return false;
+
+    for (const key of Object.keys(this.configurables)) {
+      if (this.configurables[key] !== this.originalConfigurables[key]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  getDisplayName(key: string): string {
+    return key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  getPlaceholder(key: string): string {
+    return `Enter ${key.replace(/_/g, ' ').toLowerCase()}`;
+  }
+
+  trackByConfigKey(index: number, item: any): string {
+    return item.key;
+  }
+
+  getKeyAsString(item: any): string {
+    return item.key as string;
+  }
+
+
 
   stopRecording() {
-  if (!this.recorder) return;
+    if (!this.recorder) return;
 
-  this.recorder.stopRecording(() => {
-    this.audioBlob = this.recorder.getBlob();
-    this.audioURL = URL.createObjectURL(this.audioBlob);
-    console.log('🛑 Recording stopped, WAV Blob ready:', this.audioBlob);
-  });
+    this.recorder.stopRecording(() => {
+      this.audioBlob = this.recorder.getBlob();
+      this.audioURL = URL.createObjectURL(this.audioBlob);
+      console.log('🛑 Recording stopped, WAV Blob ready:', this.audioBlob);
+    });
 
-  this.recording = false;
-  this.recordingState = 'idle';
-  this.sendEnabled = true;
-}
-
-toggleRecording() {
-  if (!this.recorder) return;
-
-  if (this.recordingState === 'recording') {
-    this.recorder.pauseRecording();
-    this.recordingState = 'paused';
-    console.log('⏸️ Recording paused');
-  } else if (this.recordingState === 'paused') {
-    this.recorder.resumeRecording();
-    this.recordingState = 'recording';
-    console.log('▶️ Recording resumed');
+    this.recording = false;
+    this.recordingState = 'idle';
+    this.sendEnabled = true;
   }
-}
+
+  toggleRecording() {
+    if (!this.recorder) return;
+
+    if (this.recordingState === 'recording') {
+      this.recorder.pauseRecording();
+      this.recordingState = 'paused';
+      console.log('⏸️ Recording paused');
+    } else if (this.recordingState === 'paused') {
+      this.recorder.resumeRecording();
+      this.recordingState = 'recording';
+      console.log('▶️ Recording resumed');
+    }
+  }
 
 
 
@@ -359,41 +465,41 @@ toggleRecording() {
 
   // ---------- Search & Reset ----------
   async searchMedicineSuggestions() {
-  if (!this.searchText.trim() || !this.currentMedForSuggestion) return;
+    if (!this.searchText.trim() || !this.currentMedForSuggestion) return;
 
-  this.loading = true;
-  try {
-    const response = await fetch(
-      `http://localhost:3000/voice/medicine/suggestions?name=${encodeURIComponent(this.searchText)}`
-    );
-    if (!response.ok) throw new Error(response.statusText);
+    this.loading = true;
+    try {
+      const response = await fetch(
+        this.url+`voice/medicine/suggestions?name=${encodeURIComponent(this.searchText)}`
+      );
+      if (!response.ok) throw new Error(response.statusText);
 
-    const data = await response.json();
-    const suggestions = Array.isArray(data) ? data : (data.suggestions || []);
+      const data = await response.json();
+      const suggestions = Array.isArray(data) ? data : (data.suggestions || []);
 
-    this.currentMedForSuggestion.filteredSuggestions = suggestions;
+      this.currentMedForSuggestion.filteredSuggestions = suggestions;
 
-    this.searchDone = true; // ✅ mark that a search has been done
-    this.loading = false;
+      this.searchDone = true; // ✅ mark that a search has been done
+      this.loading = false;
+      this.cdr.detectChanges();
+
+      console.log('🔍 Search completed:', suggestions.length, 'results found');
+    } catch (err) {
+      console.error('Error fetching search suggestions:', err);
+      this.loading = false;
+      alert('Failed to search medicines. Please try again.');
+    }
+  }
+  resetSuggestions() {
+    if (!this.currentMedForSuggestion) return;
+
+    this.currentMedForSuggestion.filteredSuggestions = [...this.originalSuggestions];
+    this.searchText = '';
+    this.searchDone = false; // ✅ reset disables the button
     this.cdr.detectChanges();
 
-    console.log('🔍 Search completed:', suggestions.length, 'results found');
-  } catch (err) {
-    console.error('Error fetching search suggestions:', err);
-    this.loading = false;
-    alert('Failed to search medicines. Please try again.');
+    console.log('↻ Reset to original suggestions');
   }
-}
-resetSuggestions() {
-  if (!this.currentMedForSuggestion) return;
-
-  this.currentMedForSuggestion.filteredSuggestions = [...this.originalSuggestions];
-  this.searchText = '';
-  this.searchDone = false; // ✅ reset disables the button
-  this.cdr.detectChanges();
-
-  console.log('↻ Reset to original suggestions');
-}
 
 
   // ---------- Send audio (WAV) to backend ----------
@@ -415,8 +521,8 @@ resetSuggestions() {
       formData.append('audioFile', this.audioBlob, 'audio.wav');
       console.log('📤 Sending audio to backend...');
 
-      const response = await fetch('http://localhost:3000/voice/upload', {
-        
+      const response = await fetch(this.url+'voice/upload', {
+
         method: 'POST',
         body: formData,
       });
@@ -546,7 +652,7 @@ resetSuggestions() {
       console.log('💾 Saving prescription:', prescriptionData);
 
       // TODO: Replace with your actual save endpoint
-      const response = await fetch('http://localhost:3000/prescriptions/save', {
+      const response = await fetch(this.url+'prescriptions/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(prescriptionData)
@@ -575,90 +681,90 @@ resetSuggestions() {
   }
 
   onAudioFileSelected(event: any) {
-  const file = event.target.files[0];
-  if (!file) return;
+    const file = event.target.files[0];
+    if (!file) return;
 
-  this.selectedAudioFile = file;
-  this.uploadAndTranscribeAudio();
-}
+    this.selectedAudioFile = file;
+    this.uploadAndTranscribeAudio();
+  }
 
-async uploadAndTranscribeAudio() {
-  if (!this.selectedAudioFile) return;
+  async uploadAndTranscribeAudio() {
+    if (!this.selectedAudioFile) return;
 
-  this.sending = true;
+    this.sending = true;
 
-  try {
-    let wavBlob: Blob;
+    try {
+      let wavBlob: Blob;
 
-    // If already a WAV file, use it directly
-    if (this.selectedAudioFile.type === 'audio/wav') {
-      wavBlob = this.selectedAudioFile;
-    } else {
-      // Convert any audio file to WAV using Web Audio API
-      const arrayBuffer = await this.selectedAudioFile.arrayBuffer();
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      // If already a WAV file, use it directly
+      if (this.selectedAudioFile.type === 'audio/wav') {
+        wavBlob = this.selectedAudioFile;
+      } else {
+        // Convert any audio file to WAV using Web Audio API
+        const arrayBuffer = await this.selectedAudioFile.arrayBuffer();
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-      wavBlob = this.audioBufferToWav(audioBuffer); // reuse your WAV conversion function
-    }
+        wavBlob = this.audioBufferToWav(audioBuffer); // reuse your WAV conversion function
+      }
 
-    const formData = new FormData();
-    formData.append('audioFile', wavBlob, 'converted.wav');
+      const formData = new FormData();
+      formData.append('audioFile', wavBlob, 'converted.wav');
 
-    console.log('📤 Uploading audio as WAV...');
-    const response = await fetch('http://localhost:3000/voice/upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (data?.text) {
-      this.transcription = data.text;
-      console.log('📝 Uploaded audio transcribed:', this.transcription);
-
-      // ✅ reuse your same logic that handles transcription
-      const result = data.result || [];
-      this.processedResult = result.map((item: any) => {
-        const validSuggestions = (item.suggestions || []).filter((s: any) => !!s?.name);
-        const highest = validSuggestions[0] || { name: '' } as MedicineSuggestion;
-        const suggestionsRest = validSuggestions.slice(1);
-
-        const doseParts = (item.original?.dose || '0-0-0').split('-');
-        const [d1, d2, d3] = [
-          doseParts[0] || '0',
-          doseParts[1] || '0',
-          doseParts[2] || '0'
-        ];
-        const doseDisplay = item.original?.dose ? `${item.original.dose}` : '0-0-0';
-
-        return {
-          selected: highest,
-          suggestions: suggestionsRest,
-          filteredSuggestions: [highest, ...suggestionsRest],
-          dose: item.original?.dose || '0-0-0',
-          dose1: d1,
-          dose2: d2,
-          dose3: d3,
-          when: item.original?.when || '',
-          frequency: item.original?.frequency || '',
-          duration: item.original?.duration || '',
-          notes: item.original?.notes || '',
-          doseDisplay
-        } as ProcessedMedicine;
+      console.log('📤 Uploading audio as WAV...');
+      const response = await fetch(this.url+'voice/upload', {
+        method: 'POST',
+        body: formData,
       });
 
-      this.cdr.detectChanges();
-      console.log('✅ Uploaded audio processed successfully');
-    } else {
-      alert('Transcription failed');
+      const data = await response.json();
+      if (data?.text) {
+        this.transcription = data.text;
+        console.log('📝 Uploaded audio transcribed:', this.transcription);
+
+        // ✅ reuse your same logic that handles transcription
+        const result = data.result || [];
+        this.processedResult = result.map((item: any) => {
+          const validSuggestions = (item.suggestions || []).filter((s: any) => !!s?.name);
+          const highest = validSuggestions[0] || { name: '' } as MedicineSuggestion;
+          const suggestionsRest = validSuggestions.slice(1);
+
+          const doseParts = (item.original?.dose || '0-0-0').split('-');
+          const [d1, d2, d3] = [
+            doseParts[0] || '0',
+            doseParts[1] || '0',
+            doseParts[2] || '0'
+          ];
+          const doseDisplay = item.original?.dose ? `${item.original.dose}` : '0-0-0';
+
+          return {
+            selected: highest,
+            suggestions: suggestionsRest,
+            filteredSuggestions: [highest, ...suggestionsRest],
+            dose: item.original?.dose || '0-0-0',
+            dose1: d1,
+            dose2: d2,
+            dose3: d3,
+            when: item.original?.when || '',
+            frequency: item.original?.frequency || '',
+            duration: item.original?.duration || '',
+            notes: item.original?.notes || '',
+            doseDisplay
+          } as ProcessedMedicine;
+        });
+
+        this.cdr.detectChanges();
+        console.log('✅ Uploaded audio processed successfully');
+      } else {
+        alert('Transcription failed');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Error uploading audio file');
+    } finally {
+      this.sending = false;
     }
-  } catch (error) {
-    console.error('Upload error:', error);
-    alert('Error uploading audio file');
-  } finally {
-    this.sending = false;
   }
-}
 
 
   // ---------- Legacy Methods (for compatibility) ----------
