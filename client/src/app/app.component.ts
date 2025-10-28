@@ -194,7 +194,7 @@ deleteIndex: number | null = null;
         length = buffer.length * numOfChan * 2 + 44,
         bufferArray = new ArrayBuffer(length),
         view = new DataView(bufferArray),
-        channels = [],
+        channels: Float32Array[] = [],
         sampleRate = buffer.sampleRate;
 
   let offset = 0;
